@@ -65,11 +65,33 @@ class _BitwiseCalculatorState extends State<BitwiseCalculator> {
     expr = expr.replaceAll(' ', '');
     if (expr.isEmpty) return BigInt.zero;
 
+    // --- Handle mex() first ---
+    final mexRegex = RegExp(r'mex\((.*?)\)');
+    final match = mexRegex.firstMatch(expr);
+    if (match != null) {
+      final inside = match.group(1)!;
+      final parts = inside.split(',').where((s) => s.trim().isNotEmpty);
+      final nums = parts.map((s) => int.tryParse(s.trim()) ?? 0).toSet().toList()..sort();
+      int mexValue = 0;
+      for (final x in nums) {
+        if (x == mexValue) {
+          mexValue++;
+        } else if (x > mexValue) {
+          break;
+        }
+      }
+      // Replace mex(...) with its computed value and re-evaluate
+      final replaced = expr.replaceRange(match.start, match.end, mexValue.toString());
+      return _evaluateExpression(replaced);
+    }
+
+    // --- Normal expression evaluation ---
     final tokens = <String>[];
     final buffer = StringBuffer();
+
     for (int i = 0; i < expr.length; i++) {
       final c = expr[i];
-      if ('^&|'.contains(c)) {
+      if ('^&|%'.contains(c)) {
         if (buffer.isNotEmpty) {
           tokens.add(buffer.toString());
           buffer.clear();
@@ -79,18 +101,25 @@ class _BitwiseCalculatorState extends State<BitwiseCalculator> {
         buffer.write(c);
       }
     }
+
     if (buffer.isNotEmpty) tokens.add(buffer.toString());
 
     BigInt result = BigInt.parse(tokens[0]);
     for (int i = 1; i < tokens.length - 1; i += 2) {
       final op = tokens[i];
       final next = BigInt.parse(tokens[i + 1]);
+
       if (op == '^') {
         result = result ^ next;
       } else if (op == '&') {
         result = result & next;
       } else if (op == '|') {
         result = result | next;
+      } else if (op == '%') {
+        if (next == BigInt.zero) {
+          throw Exception('Division by zero');
+        }
+        result = result % next;
       }
     }
     return result;
@@ -100,10 +129,10 @@ class _BitwiseCalculatorState extends State<BitwiseCalculator> {
   Widget build(BuildContext context) {
     final buttons = [
       ['AC', '&', '|', '^'],
-      ['7', '8', '9'],
-      ['4', '5', '6'],
-      ['1', '2', '3'],
-      ['0', '⌫']
+      ['7', '8', '9', '%'],
+      ['4', '5', '6', 'mex('],
+      ['1', '2', '3', ','],
+      ['0', '(', ')', '⌫'],
     ];
 
     return Scaffold(
@@ -167,7 +196,9 @@ class _BitwiseCalculatorState extends State<BitwiseCalculator> {
                     return Expanded(
                       child: Row(
                         children: row.map((text) {
-                          final isOperator = ['&', '|', '^', 'AC', '⌫'].contains(text);
+                          final isOperator =
+                          ['&', '|', '^', '%', 'mex(', ',', '(', ')', 'AC', '⌫']
+                              .contains(text);
                           return Expanded(
                             child: Padding(
                               padding: const EdgeInsets.all(6),
@@ -186,7 +217,7 @@ class _BitwiseCalculatorState extends State<BitwiseCalculator> {
                                   child: Text(
                                     text,
                                     style: TextStyle(
-                                      fontSize: 26,
+                                      fontSize: 22,
                                       fontWeight: FontWeight.w500,
                                       color: isOperator
                                           ? Colors.white
